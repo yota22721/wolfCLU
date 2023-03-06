@@ -215,6 +215,73 @@ static WOLFSSL_X509_EXTENSION* wolfCLU_parseSubjectKeyID(char* str, int crit,
     return ext;
 }
 
+static WOLFSSL_X509_EXTENSION* wolfCLU_parseAuthorityKeyID(char* str, int crit,
+        WOLFSSL_X509* x509)
+{
+    Cert cert; /* temporary to use existing subject key id api */
+    WOLFSSL_X509_EXTENSION *ext = NULL;
+    WOLFSSL_EVP_PKEY *pkey = NULL;
+    char* word, *end;
+    char* deli = (char*)",";
+
+    if (x509 == NULL || str == NULL)
+        return NULL;
+
+    for (word = XSTRTOK(str, deli, &end); word != NULL;
+            word = XSTRTOK(NULL, deli, &end)) {
+
+        if (XSTRNCMP(word, "keyid", XSTRLEN(word)) == 0) {
+            WOLFSSL_ASN1_STRING *data;
+            int  keyType;
+            void *key = NULL;
+
+            XMEMSET(&cert, 0, sizeof(Cert));
+            keyType = wolfSSL_X509_get_pubkey_type(x509);
+
+            pkey = wolfSSL_X509_get_pubkey(x509);
+            if (pkey == NULL) {
+                wolfCLU_LogError("no public key set to hash for subject key id");
+                return NULL;
+            }
+
+            switch (keyType) {
+                case RSAk:
+                    key = pkey->rsa->internal;
+                    keyType = RSA_TYPE;
+                    break;
+
+                case ECDSAk:
+                    key = pkey->ecc->internal;
+                    keyType = ECC_TYPE;
+                    break;
+
+                default:
+                    wolfCLU_LogError("key type not yet supported");
+            }
+
+            if (wc_SetAuthKeyIdFromPublicKey_ex(&cert, keyType, key) < 0) {
+                wolfCLU_LogError("error hashing public key");
+            }
+            else {
+                data = wolfSSL_ASN1_STRING_new();
+                if (data != NULL) {
+                    if (wolfSSL_ASN1_STRING_set(data, cert.skid, cert.skidSz)
+                            != WOLFSSL_SUCCESS) {
+                        wolfCLU_LogError("error setting the skid");
+                    }
+                    else {
+                        ext = wolfSSL_X509V3_EXT_i2d(NID_authority_key_identifier,
+                                crit, data);
+                    }
+                    wolfSSL_ASN1_STRING_free(data);
+                }
+            }
+	    wolfSSL_EVP_PKEY_free(pkey);
+        }
+    }
+
+    return ext;
+}
 
 static WOLFSSL_X509_EXTENSION* wolfCLU_parseKeyUsage(char* str, int crit,
         WOLFSSL_X509* x509)
@@ -310,6 +377,7 @@ static int wolfCLU_parseExtension(WOLFSSL_X509* x509, char* str, int nid,
             break;
         case NID_authority_key_identifier:
             /* @TODO */
+            ext = wolfCLU_parseAuthorityKeyID(str, crit, x509);
             break;
         case NID_key_usage:
             ext = wolfCLU_parseKeyUsage(str, crit, x509);
@@ -425,30 +493,37 @@ int wolfCLU_setExtensions(WOLFSSL_X509* x509, WOLFSSL_CONF* conf, char* sect)
         return WOLFCLU_SUCCESS; /* none set */
     }
 
-    current = wolfSSL_NCONF_get_string(conf, sect, "basicConstraints");
-    if (current != NULL) {
-        wolfCLU_parseExtension(x509, current, NID_basic_constraints, &idx);
-    }
-
     current = wolfSSL_NCONF_get_string(conf, sect, "subjectKeyIdentifier");
+    printf("subkey : %s\n", current);
     if (current != NULL) {
         wolfCLU_parseExtension(x509, current, NID_subject_key_identifier, &idx);
     }
 
     current = wolfSSL_NCONF_get_string(conf, sect, "authorityKeyIdentifier");
+    printf("authkey : %s\n", current);
     if (current != NULL) {
         wolfCLU_parseExtension(x509, current, NID_authority_key_identifier,
                 &idx);
     }
 
+    current = wolfSSL_NCONF_get_string(conf, sect, "basicConstraints");
+    printf("basic : %s\n", current);
+    if (current != NULL) {
+        wolfCLU_parseExtension(x509, current, NID_basic_constraints, &idx);
+    }
+
     current = wolfSSL_NCONF_get_string(conf, sect, "keyUsage");
+    printf("keyusage : %s\n", current);
     if (current != NULL) {
         wolfCLU_parseExtension(x509, current, NID_key_usage, &idx);
     }
 
     current = wolfSSL_NCONF_get_string(conf, sect, "subjectAltName");
-    if (current != NULL && current[0] == '@') {
-        current = current+1;
+    printf("subaltname : %s\n", current);
+    if (current != NULL) {
+        if(current[0] == '@'){
+            current = current+1;
+        }
         ret = wolfCLU_setAltNames(x509, conf, current);
     }
     return ret;
