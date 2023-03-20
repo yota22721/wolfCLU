@@ -218,10 +218,10 @@ static WOLFSSL_X509_EXTENSION* wolfCLU_parseSubjectKeyID(char* str, int crit,
 static WOLFSSL_X509_EXTENSION* wolfCLU_parseAuthorityKeyID(char* str, int crit,
         WOLFSSL_X509* x509)
 {
-    Cert cert; /* temporary to use existing subject key id api */
+    Cert cert; /* temporary to use existing authority key id api */
     WOLFSSL_X509_EXTENSION *ext = NULL;
     WOLFSSL_EVP_PKEY *pkey = NULL;
-    char* word, *end;
+    char* word, *wd, *end;
     char* deli = (char*)",";
 
     if (x509 == NULL || str == NULL)
@@ -229,7 +229,9 @@ static WOLFSSL_X509_EXTENSION* wolfCLU_parseAuthorityKeyID(char* str, int crit,
 
     for (word = XSTRTOK(str, deli, &end); word != NULL;
             word = XSTRTOK(NULL, deli, &end)) {
-
+        for (wd = XSTRTOK(word, ":", &end); wd != NULL;
+            wd = XSTRTOK(NULL, ":", &end)) {
+            printf("word :: %s\n", wd);
         if (XSTRNCMP(word, "keyid", XSTRLEN(word)) == 0) {
             WOLFSSL_ASN1_STRING *data;
             int  keyType;
@@ -278,6 +280,7 @@ static WOLFSSL_X509_EXTENSION* wolfCLU_parseAuthorityKeyID(char* str, int crit,
             }
 	    wolfSSL_EVP_PKEY_free(pkey);
         }
+    }
     }
 
     return ext;
@@ -376,7 +379,6 @@ static int wolfCLU_parseExtension(WOLFSSL_X509* x509, char* str, int nid,
             ext = wolfCLU_parseSubjectKeyID(str, crit, x509);
             break;
         case NID_authority_key_identifier:
-            /* @TODO */
             ext = wolfCLU_parseAuthorityKeyID(str, crit, x509);
             break;
         case NID_key_usage:
@@ -502,8 +504,7 @@ int wolfCLU_setExtensions(WOLFSSL_X509* x509, WOLFSSL_CONF* conf, char* sect)
     current = wolfSSL_NCONF_get_string(conf, sect, "authorityKeyIdentifier");
     printf("authkey : %s\n", current);
     if (current != NULL) {
-        wolfCLU_parseExtension(x509, current, NID_authority_key_identifier,
-                &idx);
+        wolfCLU_parseExtension(x509, current, NID_authority_key_identifier, &idx);
     }
 
     current = wolfSSL_NCONF_get_string(conf, sect, "basicConstraints");

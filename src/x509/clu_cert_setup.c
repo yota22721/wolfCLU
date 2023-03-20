@@ -66,6 +66,7 @@ int wolfCLU_certSetup(int argc, char** argv)
     WOLFSSL_BIO* out = NULL;
     WOLFSSL_X509* x509 = NULL;
     WOLFSSL_EVP_PKEY* privkey = NULL;
+    enum wc_HashType hash = WC_HASH_TYPE_SHA256;
 
     byte* inBufRaw = NULL;
     byte* inBuf = NULL;
@@ -242,7 +243,21 @@ int wolfCLU_certSetup(int argc, char** argv)
             ret = WOLFCLU_FATAL_ERROR;
         }
     }
-
+/*---------------------------------------------------------------------------*/
+/* md */
+/*---------------------------------------------------------------------------*/
+    if (ret == WOLFCLU_SUCCESS) {
+        /* set flag for no output file */
+        if(wolfCLU_checkForArg("-md5", 4, argc, argv) > 0){
+            hash = WC_HASH_TYPE_MD5;
+        }
+         if(wolfCLU_checkForArg("-md2", 4, argc, argv) > 0){
+            hash = WC_HASH_TYPE_MD2;
+        }
+        if(wolfCLU_checkForArg("-sha1", 5, argc, argv) > 0){
+            hash = WC_HASH_TYPE_SHA;
+        }
+    } /* Optional flag do not return error */
 /*---------------------------------------------------------------------------*/
 /* noout */
 /*---------------------------------------------------------------------------*/
@@ -701,7 +716,15 @@ int wolfCLU_certSetup(int argc, char** argv)
             ret = WOLFCLU_FATAL_ERROR;
         }
     }
+
     if (ret == WOLFCLU_SUCCESS && reqFlag) {
+        const WOLFSSL_EVP_MD* h = NULL;
+        if(hash == WC_HASH_TYPE_MD5)
+            h = wolfSSL_EVP_md5();
+        if(hash == WC_HASH_TYPE_SHA)
+            h = wolfSSL_EVP_sha1();
+        if(hash == WC_HASH_TYPE_SHA256)
+            h = wolfSSL_EVP_sha256();
 
         if (ret == WOLFCLU_SUCCESS) {
             if (wolfSSL_X509_check_private_key(x509, privkey) !=
@@ -710,8 +733,8 @@ int wolfCLU_certSetup(int argc, char** argv)
                 ret = WOLFCLU_FATAL_ERROR;
             }
         }
-        if (ret == WOLFCLU_SUCCESS) {
-            if (wolfSSL_X509_sign(x509, privkey, wolfSSL_EVP_sha256()) <= 0) {
+        if (ret == WOLFCLU_SUCCESS && h != NULL) {
+            if (wolfSSL_X509_sign(x509, privkey, h) <= 0) {
                 wolfCLU_LogError("Error signing certificate");
                 ret = WOLFCLU_FATAL_ERROR;
             }
