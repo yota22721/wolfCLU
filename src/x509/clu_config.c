@@ -222,18 +222,18 @@ static WOLFSSL_X509_EXTENSION* wolfCLU_parseAuthorityKeyID(char* str, int crit,
     WOLFSSL_X509_EXTENSION *ext = NULL;
     WOLFSSL_EVP_PKEY *pkey = NULL;
     char* word, *wd, *end;
-    char* deli = (char*)",";
+    char* deli = (char*)":";
 
     if (x509 == NULL || str == NULL)
         return NULL;
 
-    for (word = XSTRTOK(str, deli, &end); word != NULL;
-            word = XSTRTOK(NULL, deli, &end)) {
-        for (wd = XSTRTOK(word, ":", &end); wd != NULL;
-            wd = XSTRTOK(NULL, ":", &end)) {
-            printf("word :: %s\n", wd);
-        if (XSTRNCMP(word, "keyid", XSTRLEN(word)) == 0) {
-            WOLFSSL_ASN1_STRING *data;
+    for (word = XSTRTOK(str, ",", &end); word != NULL;
+            word = XSTRTOK(NULL, ",", &end)) {
+        wd = XSTRTOK(word, ":", &end);
+        if (wd != NULL && XSTRNCMP(wd, "keyid", XSTRLEN(wd)) == 0) {
+            wd = XSTRTOK(NULL, deli, &end);
+            if (XSTRNCMP(wd, "always", XSTRLEN(wd)) == 0) {
+            WOLFSSL_AUTHORITY_KEYID *akey;
             int  keyType;
             void *key = NULL;
 
@@ -242,7 +242,7 @@ static WOLFSSL_X509_EXTENSION* wolfCLU_parseAuthorityKeyID(char* str, int crit,
 
             pkey = wolfSSL_X509_get_pubkey(x509);
             if (pkey == NULL) {
-                wolfCLU_LogError("no public key set to hash for subject key id");
+                wolfCLU_LogError("no public key set to hash for authority key id");
                 return NULL;
             }
 
@@ -265,22 +265,32 @@ static WOLFSSL_X509_EXTENSION* wolfCLU_parseAuthorityKeyID(char* str, int crit,
                 wolfCLU_LogError("error hashing public key");
             }
             else {
-                data = wolfSSL_ASN1_STRING_new();
-                if (data != NULL) {
-                    if (wolfSSL_ASN1_STRING_set(data, cert.skid, cert.skidSz)
+                akey = wolfSSL_AUTHORITY_KEYID_new();
+                if (akey == NULL) {
+                    wolfCLU_LogError("Failed to malloc authority key id");
+                    return NULL;
+            }
+                akey->keyid = wolfSSL_ASN1_STRING_new();
+                if (akey->keyid != NULL) {
+                    if (wolfSSL_ASN1_STRING_set(akey->keyid, cert.akid, cert.akidSz)
                             != WOLFSSL_SUCCESS) {
-                        wolfCLU_LogError("error setting the skid");
+                        wolfCLU_LogError("error setting the akid");
                     }
                     else {
                         ext = wolfSSL_X509V3_EXT_i2d(NID_authority_key_identifier,
-                                crit, data);
+                                crit, akey);
                     }
-                    wolfSSL_ASN1_STRING_free(data);
+                    wolfSSL_AUTHORITY_KEYID_free(akey);
                 }
             }
 	    wolfSSL_EVP_PKEY_free(pkey);
         }
-    }
+      }
+      if (wd != NULL && XSTRNCMP(wd, "issuer", XSTRLEN(wd)) == 0) {
+            wd = XSTRTOK(NULL, deli, &end);
+            if (XSTRNCMP(wd, "always", XSTRLEN(wd)) == 0) {
+            }
+      }
     }
 
     return ext;
@@ -436,7 +446,6 @@ static int wolfCLU_setAltNames(WOLFSSL_X509* x509, WOLFSSL_CONF* conf,
                 ret = WOLFCLU_FATAL_ERROR;
                 break;
             }
-
             if (XSTRNCMP(c->name, "IP", 2) == 0) {
                 ipStr = wolfSSL_a2i_IPADDRESS(c->value);
 
@@ -456,6 +465,12 @@ static int wolfCLU_setAltNames(WOLFSSL_X509* x509, WOLFSSL_CONF* conf,
 
             if (XSTRNCMP(c->name, "DNS", 3) == 0) {
                 type = ASN_DNS_TYPE;
+                s = c->value;
+                sSz = (int)XSTRLEN(c->value);
+            }
+
+            if(XSTRNCMP(c->name, "URI", 3) == 0){
+                type = ASN_URI_TYPE;
                 s = c->value;
                 sSz = (int)XSTRLEN(c->value);
             }
@@ -483,6 +498,58 @@ static int wolfCLU_setAltNames(WOLFSSL_X509* x509, WOLFSSL_CONF* conf,
     return ret;
 }
 
+/* return WOLFCLU_SUCCESS on success */
+static int wolfCLU_setSubjAltName(WOLFSSL_X509* x509, char* str)
+{
+    int type = 0;
+    int ret  = WOLFCLU_SUCCESS;
+    WOLFSSL_ASN1_STRING *ipStr = NULL;
+    char* word, *end;
+    char* deli = (char*)",";
+    if (x509 == NULL || str == NULL)
+        return ret;
+
+    for (word = XSTRTOK(str, deli, &end); word != NULL;
+            word = XSTRTOK(NULL, deli, &end)) {
+            if (XSTRNCMP(word, "IP", 2) == 0) {
+                ipStr = wolfSSL_a2i_IPADDRESS(word);
+
+                if (ipStr != NULL) {
+                    word   = (char*)wolfSSL_ASN1_STRING_data(ipStr);
+                    type = ASN_IP_TYPE;
+
+                }
+                else {
+                    wolfCLU_LogError("bad IP found %s", str);
+                    ret = WOLFCLU_FATAL_ERROR;
+                    break;
+                }
+
+            }
+            if (XSTRNCMP(word, "DNS", 3) == 0){
+                type  = ASN_DNS_TYPE;
+                word  = word + XSTRLEN("DNS")+1;
+            }
+
+            if(XSTRNCMP(str, "URI", 3) == 0){
+                type  = ASN_URI_TYPE;
+                word  = word + XSTRLEN("URI")+1;
+            }
+
+            if (wolfSSL_X509_add_altname(x509, word, type)
+                != WOLFSSL_SUCCESS) {
+                wolfCLU_LogError("error adding subject alt name %s", word);
+                if (ipStr != NULL)
+                    wolfSSL_ASN1_STRING_free(ipStr);
+                ret = WOLFCLU_FATAL_ERROR;
+                break;
+            }
+            if (ipStr != NULL)
+                wolfSSL_ASN1_STRING_free(ipStr);
+
+    }
+    return ret;
+}
 
 /* return WOLFCLU_SUCCESS on success */
 int wolfCLU_setExtensions(WOLFSSL_X509* x509, WOLFSSL_CONF* conf, char* sect)
@@ -493,6 +560,12 @@ int wolfCLU_setExtensions(WOLFSSL_X509* x509, WOLFSSL_CONF* conf, char* sect)
 
     if (sect == NULL) {
         return WOLFCLU_SUCCESS; /* none set */
+    }
+
+    current = wolfSSL_NCONF_get_string(conf, sect, "basicConstraints");
+    printf("basic : %s\n", current);
+    if (current != NULL) {
+        wolfCLU_parseExtension(x509, current, NID_basic_constraints, &idx);
     }
 
     current = wolfSSL_NCONF_get_string(conf, sect, "subjectKeyIdentifier");
@@ -507,12 +580,6 @@ int wolfCLU_setExtensions(WOLFSSL_X509* x509, WOLFSSL_CONF* conf, char* sect)
         wolfCLU_parseExtension(x509, current, NID_authority_key_identifier, &idx);
     }
 
-    current = wolfSSL_NCONF_get_string(conf, sect, "basicConstraints");
-    printf("basic : %s\n", current);
-    if (current != NULL) {
-        wolfCLU_parseExtension(x509, current, NID_basic_constraints, &idx);
-    }
-
     current = wolfSSL_NCONF_get_string(conf, sect, "keyUsage");
     printf("keyusage : %s\n", current);
     if (current != NULL) {
@@ -524,8 +591,9 @@ int wolfCLU_setExtensions(WOLFSSL_X509* x509, WOLFSSL_CONF* conf, char* sect)
     if (current != NULL) {
         if(current[0] == '@'){
             current = current+1;
+            ret = wolfCLU_setAltNames(x509, conf, current);
         }
-        ret = wolfCLU_setAltNames(x509, conf, current);
+        ret = wolfCLU_setSubjAltName(x509, current);
     }
     return ret;
 }

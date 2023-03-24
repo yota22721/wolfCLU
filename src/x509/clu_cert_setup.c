@@ -412,7 +412,8 @@ int wolfCLU_certSetup(int argc, char** argv)
             long line = 0;
             conf = wolfSSL_NCONF_new(NULL);
             wolfSSL_NCONF_load(conf, extFile, &line);
-             /* extension was specifically set, error out if not found */
+
+            /* extension was specifically set, error out if not found */
             if (wolfSSL_NCONF_get_section(conf, ext) == NULL) {
                 wolfCLU_LogError("Unable to find certificate extension "
                         "section %s", ext);
