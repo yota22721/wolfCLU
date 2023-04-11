@@ -48,6 +48,7 @@ int wolfCLU_certSetup(int argc, char** argv)
     char* keyFile = NULL;
     char* extFile = NULL;
     char* ext     = NULL;
+    char* md      = NULL;
     int   inForm  = PEM_FORM; /* the input format */
     int   outForm = PEM_FORM; /* the output format */
 
@@ -247,15 +248,19 @@ int wolfCLU_certSetup(int argc, char** argv)
 /* md */
 /*---------------------------------------------------------------------------*/
     if (ret == WOLFCLU_SUCCESS) {
-        /* set flag for no output file */
-        if(wolfCLU_checkForArg("-md5", 4, argc, argv) > 0){
-            hash = WC_HASH_TYPE_MD5;
+        idx = wolfCLU_checkForArg("-md", 3, argc, argv);
+        if (idx > 0) {
+            md = argv[idx+1];
+            /* set flag for no output file */
+            hash = wolfCLU_StringToHashType(md);
+            if (hash == WC_HASH_TYPE_NONE) {
+                wolfCLU_LogError("Invalid digest name");
+                ret = WOLFCLU_FATAL_ERROR;
+            }
         }
-         if(wolfCLU_checkForArg("-md2", 4, argc, argv) > 0){
-            hash = WC_HASH_TYPE_MD2;
-        }
-        if(wolfCLU_checkForArg("-sha1", 5, argc, argv) > 0){
-            hash = WC_HASH_TYPE_SHA;
+
+        if (idx < 0) {
+            ret = WOLFCLU_FATAL_ERROR;
         }
     } /* Optional flag do not return error */
 /*---------------------------------------------------------------------------*/
@@ -406,25 +411,10 @@ int wolfCLU_certSetup(int argc, char** argv)
     }
 
 
-    if(ret == WOLFCLU_SUCCESS && extFile != NULL){
-        if(reqFlag){
-            WOLFSSL_CONF *conf = NULL;
-            long line = 0;
-            conf = wolfSSL_NCONF_new(NULL);
-            wolfSSL_NCONF_load(conf, extFile, &line);
-
-            /* extension was specifically set, error out if not found */
-            if (wolfSSL_NCONF_get_section(conf, ext) == NULL) {
-                wolfCLU_LogError("Unable to find certificate extension "
-                        "section %s", ext);
-                ret = WOLFCLU_FATAL_ERROR;
-            }
-            else {
-                ret = wolfCLU_setExtensions(x509, conf, ext);
-            }
-            getchar();
-        }
+    if(ret == WOLFCLU_SUCCESS && extFile != NULL && reqFlag != 0){
+        ret = wolfCLU_readConfig(x509, extFile, (char*)"req", ext);
     }
+
     /*default to version 3 which supports extensions */
     if (ret == WOLFCLU_SUCCESS &&
            wolfSSL_X509_set_version(x509, WOLFSSL_X509_V3) != WOLFSSL_SUCCESS && reqFlag  ) {
@@ -726,6 +716,8 @@ int wolfCLU_certSetup(int argc, char** argv)
             h = wolfSSL_EVP_sha1();
         if(hash == WC_HASH_TYPE_SHA256)
             h = wolfSSL_EVP_sha256();
+        if(hash == WC_HASH_TYPE_SHA512)
+            h = wolfSSL_EVP_sha512();
 
         if (ret == WOLFCLU_SUCCESS) {
             if (wolfSSL_X509_check_private_key(x509, privkey) !=
