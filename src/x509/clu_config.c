@@ -34,6 +34,7 @@ static int wolfCLU_setAttributes(WOLFSSL_X509* x509, WOLFSSL_CONF* conf,
     const char* current;
     int currentSz;
 
+    currentSz = 0;
     current = wolfSSL_NCONF_get_string(conf, sect, "challengePassword");
     if (current != NULL) {
         currentSz = (int)XSTRLEN(current);
@@ -225,7 +226,7 @@ static WOLFSSL_X509_EXTENSION* wolfCLU_parseAuthorityKeyID(char* str, int crit,
     WOLFSSL_AUTHORITY_KEYID *akey = NULL;
     char* word, *end;
     char* deli = (char*)":";
-    char* wd[2];
+    char* tmp[2];
 
     if (x509 == NULL || str == NULL)
         return NULL;
@@ -234,19 +235,19 @@ static WOLFSSL_X509_EXTENSION* wolfCLU_parseAuthorityKeyID(char* str, int crit,
            word = XSTRTOK(NULL, ",", &end)){
 
         if(XSTRNCMP(word, "keyid", XSTRLEN("keyid")) == 0)
-            wd[0] = word;
+            tmp[0] = word;
 
         if(XSTRNCMP(word, "issuer", XSTRLEN("issuer")) == 0)
-            wd[1] = word;
+            tmp[1] = word;
     }
 
-    word = XSTRTOK(wd[0], deli, &end);
+    XSTRTOK(tmp[0], deli, &end);
+    word = XSTRTOK(NULL, deli, &end);
     if(word == NULL){
         keyidopt += 1;
     }
 
-    if (word != NULL && XSTRNCMP(word, "keyid", XSTRLEN(word)) == 0) {
-        word = XSTRTOK(NULL, deli, &end);
+    if (word != NULL) {
         if (XSTRNCMP(word, "always", XSTRLEN(word)) == 0) {
             int  keyType;
             void *key = NULL;
@@ -300,7 +301,8 @@ static WOLFSSL_X509_EXTENSION* wolfCLU_parseAuthorityKeyID(char* str, int crit,
                 wolfSSL_EVP_PKEY_free(pkey);
         }
     }
-    word = XSTRTOK(wd[1], deli, &end);
+
+    XSTRTOK(tmp[1], deli, &end);
     word = XSTRTOK(NULL, deli, &end);
     if (keyidopt || XSTRNCMP(word, "always", XSTRLEN(word)) == 0) {
         WOLFSSL_ASN1_OBJECT* obj;
@@ -567,13 +569,13 @@ static int wolfCLU_setSubjAltName(WOLFSSL_X509* x509, char* str)
                     break;
                 }
             }
-            if (XSTRNCMP(word, "DNS", 3) == 0){
+            if (XSTRNCMP(word, "DNS", 3) == 0) {
                 type  = ASN_DNS_TYPE;
                 word  = word + XSTRLEN("DNS")+1;
                 sSz   = (int)XSTRLEN(word);
             }
 
-            if(XSTRNCMP(str, "URI", 3) == 0){
+            if (XSTRNCMP(str, "URI", 3) == 0) {
                 type  = ASN_URI_TYPE;
                 word  = word + XSTRLEN("URI")+1;
                 sSz   = (int)XSTRLEN(word);
