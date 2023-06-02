@@ -1,6 +1,6 @@
 /* clu_cert_setup.c
  *
- * Copyright (C) 2006-2021 wolfSSL Inc.
+ * Copyright (C) 2006-2023 wolfSSL Inc.
  *
  * This file is part of wolfSSL.
  *
@@ -39,13 +39,12 @@ int wolfCLU_certSetup(int argc, char** argv)
     int textFlag    = 0;   /* does user desire human readable cert info */
     int textPubkey  = 0;   /* does user desire human readable pubkey info */
     int nooutFlag   = 0;   /* are we outputting a file */
-    int reqFlag     = 0;   /* set tp read csr file */
+    int reqFlag     = 0;   /* set to read csr file */
     int silentFlag  = 0;   /* set to disable echo to command line */
     int modulus     = 0;   /* set to view modulus of cert */
 
     char* inFile  = NULL;   /* pointer to the inFile name */
     char* outFile = NULL;   /* pointer to the outFile name */
-    char* keyFile = NULL;   /* pointer to the private key file name */
     char* extFile = NULL;   /* pointer to the config File name */
     char* ext     = NULL;   /* pointer to the extensions section's name in config File */
     char* md      = NULL;   /* pointer to the hash name */
@@ -63,6 +62,7 @@ int wolfCLU_certSetup(int argc, char** argv)
     byte printSubjHash = 0;
 
     WOLFSSL_BIO* in  = NULL;
+    WOLFSSL_BIO* keyIn = NULL;
     WOLFSSL_BIO* inMem = NULL;
     WOLFSSL_BIO* out = NULL;
     WOLFSSL_X509* x509 = NULL;
@@ -110,9 +110,13 @@ int wolfCLU_certSetup(int argc, char** argv)
         idx = wolfCLU_checkForArg("-signkey", 8, argc, argv);
         if (idx > 0) {
             /* If no error, then write keyFile */
-            keyFile = argv[idx+1];
+            keyIn = wolfSSL_BIO_new_file(argv[idx+1], "rb");
+            if (keyIn == NULL) {
+                    wolfCLU_LogError("Unable to open private key file %s",
+                            optarg);
+                    ret = WOLFCLU_FATAL_ERROR;
+                }
         }
-
         if (idx < 0) {
             ret = WOLFCLU_FATAL_ERROR;
         }
@@ -126,7 +130,6 @@ int wolfCLU_certSetup(int argc, char** argv)
             /* If no error, then write extFile */
             extFile = argv[idx+1];
         }
-
         if (idx < 0) {
             ret = WOLFCLU_FATAL_ERROR;
         }
@@ -140,7 +143,6 @@ int wolfCLU_certSetup(int argc, char** argv)
             /*If no error, then write extFile extension's section */
             ext = argv[idx+1];
         }
-
         if (idx < 0) {
             ret = WOLFCLU_FATAL_ERROR;
         }
@@ -326,21 +328,18 @@ int wolfCLU_certSetup(int argc, char** argv)
                 else {
                     if (inForm == PEM_FORM) {
                         /* Find the PEM certificate header. */
-                        inBufCertBegin = (byte*)XSTRSTR((char*)inBufRaw,
-                                                        PEM_BEGIN_CERT);
-                        if (inBufCertBegin == NULL) {
-                            inBufCertBegin = (byte*)XSTRSTR((char*)inBufRaw,
+                        if (reqFlag) {
+                             inBufCertBegin = (byte*)XSTRSTR((char*)inBufRaw,
                                                         BEGIN_CERT_REQ);
-                            if (inBufCertBegin == NULL) {
-                                wolfCLU_LogError("Failed to find PEM "
+                        }
+                        else {
+                            inBufCertBegin = (byte*)XSTRSTR((char*)inBufRaw,
+                                                        PEM_BEGIN_CERT);
+                        }
+                        if (inBufCertBegin == NULL) {
+                            wolfCLU_LogError("Failed to find PEM "
                                              "certificate header.");
-                                ret = WOLFCLU_FATAL_ERROR;
-
-                            }
-                            else {
-                                inBufSz -= inBufCertBegin - inBufRaw;
-                                inBuf = inBufCertBegin;
-                            }
+                            ret = WOLFCLU_FATAL_ERROR;
                         }
                         else {
                             inBufSz -= inBufCertBegin - inBufRaw;
@@ -392,24 +391,29 @@ int wolfCLU_certSetup(int argc, char** argv)
 
 
     /* try to open self signeky file if set */
-    if (ret == WOLFCLU_SUCCESS && keyFile != NULL) {
-        WOLFSSL_BIO* keyIn = NULL;
-        keyIn = wolfSSL_BIO_new_file(keyFile, "rb");
-        if (keyIn == NULL) {
-            wolfCLU_LogError("unable to open key file");
-            ret = WOLFCLU_FATAL_ERROR;
+    if (ret == WOLFCLU_SUCCESS && keyIn != NULL) {
+        privkey = wolfSSL_PEM_read_bio_PrivateKey(keyIn, NULL, NULL, NULL);
+        if (privkey == NULL) {
+            wolfCLU_LogError("Error reading key from file");
+            ret = USER_INPUT_ERROR;
         }
-        else{
-            privkey = wolfSSL_PEM_read_bio_PrivateKey(keyIn, NULL, NULL, NULL);
-            if (privkey == NULL) {
-                wolfCLU_LogError("Error reading key from file");
-                ret = USER_INPUT_ERROR;
-            }
-        }
+        wolfSSL_BIO_free(keyIn);
     }
 
-    if(ret == WOLFCLU_SUCCESS && extFile != NULL && reqFlag != 0){
-        ret = wolfCLU_readConfig(x509, extFile, (char*)"req", ext);
+    if (ret == WOLFCLU_SUCCESS && extFile != NULL) {
+        WOLFSSL_CONF *conf = NULL;
+        long line = 0;
+
+        conf = wolfSSL_NCONF_new(NULL);
+        wolfSSL_NCONF_load(conf, extFile, &line);
+        if (wolfSSL_NCONF_get_section(conf, ext) == NULL) {
+            wolfCLU_LogError("Unable to find certificate extension "
+                    "section %s", ext);
+            ret = WOLFCLU_FATAL_ERROR;
+        }
+        else {
+            ret = wolfCLU_setExtensions(x509, conf, ext);
+        }
     }
 
     /*default to version 3 which supports extensions */
@@ -421,16 +425,22 @@ int wolfCLU_certSetup(int argc, char** argv)
 
     if (ret == WOLFCLU_SUCCESS && reqFlag) {
         const WOLFSSL_EVP_MD* h = NULL;
-        if(hash == WC_HASH_TYPE_MD5) {
-            h = wolfSSL_EVP_md5();
-        }
-        else if(hash == WC_HASH_TYPE_SHA) {
+        if (hash == WC_HASH_TYPE_SHA) {
             h = wolfSSL_EVP_sha1();
         }
-        else if(hash == WC_HASH_TYPE_SHA256) {
+        else if (hash == WC_HASH_TYPE_SHA224) {
+            h = wolfSSL_EVP_sha224();
+        }
+        else if (hash == WC_HASH_TYPE_SHA256) {
             h = wolfSSL_EVP_sha256();
         }
-        else{
+        else if (hash == WC_HASH_TYPE_SHA384) {
+            h = wolfSSL_EVP_sha384();
+        }
+        else if (hash == WC_HASH_TYPE_SHA512) {
+            h = wolfSSL_EVP_sha512();
+        }
+        else {
             wolfCLU_LogError("Unsupported version.");
             ret = WOLFCLU_FATAL_ERROR;
         }
@@ -788,9 +798,10 @@ int wolfCLU_certSetup(int argc, char** argv)
         /* if inform is PEM we convert to DER for excluding input that is not
          * part of the certificate */
         if (inForm == PEM_FORM) {
-            if(reqFlag){
+            if (reqFlag) {
                 derBufSz = wolfSSL_i2d_X509(x509, &derBuf);
-            }else{
+            }
+            else {
                 derBuf   = derObj->buffer;
                 derBufSz = derObj->length;
             }
