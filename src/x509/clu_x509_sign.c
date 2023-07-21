@@ -1,6 +1,6 @@
 /* clu_x509_sign.c
  *
- * Copyright (C) 2006-2021 wolfSSL Inc.
+ * Copyright (C) 2006-2023 wolfSSL Inc.
  *
  * This file is part of wolfSSL.
  *
@@ -65,7 +65,7 @@ struct WOLFCLU_CERT_SIGN {
 };
 
 
-WOLFCLU_CERT_SIGN* wolfCLU_CertSignNew()
+WOLFCLU_CERT_SIGN* wolfCLU_CertSignNew(void)
 {
     WOLFCLU_CERT_SIGN* ret;
 
@@ -249,7 +249,7 @@ enum wc_HashType wolfCLU_StringToHashType(char* in)
 }
 
 
-static int _wolfCLU_CertSetDate(WOLFSSL_X509* x509, int days)
+int wolfCLU_CertSetDate(WOLFSSL_X509* x509, int days)
 {
     int ret = WOLFCLU_SUCCESS;
 
@@ -459,7 +459,7 @@ static int _checkPolicy(WOLFSSL_X509_NAME* issuer, WOLFSSL_X509_NAME* subject,
  */
 int wolfCLU_CertSign(WOLFCLU_CERT_SIGN* csign, WOLFSSL_X509* x509)
 {
-    const WOLFSSL_EVP_MD* md;
+    const WOLFSSL_EVP_MD* md = NULL;
     WOLFSSL_BIO* out = NULL;
 
     int ret = WOLFCLU_SUCCESS;
@@ -476,7 +476,7 @@ int wolfCLU_CertSign(WOLFCLU_CERT_SIGN* csign, WOLFSSL_X509* x509)
 
     /* set cert date */
     if (ret == WOLFCLU_SUCCESS) {
-        ret = _wolfCLU_CertSetDate(x509, csign->days);
+        ret = wolfCLU_CertSetDate(x509, csign->days);
     }
 
     /* set cert issuer */

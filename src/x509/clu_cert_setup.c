@@ -1,6 +1,6 @@
 /* clu_cert_setup.c
  *
- * Copyright (C) 2006-2021 wolfSSL Inc.
+ * Copyright (C) 2006-2023 wolfSSL Inc.
  *
  * This file is part of wolfSSL.
  *
@@ -26,6 +26,7 @@
 #include <wolfclu/clu_error_codes.h>
 #include <wolfclu/x509/clu_cert.h>
 #include <wolfclu/x509/clu_parse.h>
+#include <wolfclu/x509/clu_x509_sign.h>
 
 #define PEM_BEGIN_CERT "-----BEGIN CERTIFICATE-----"
 #define BEGIN_CERT_REQ "-----BEGIN CERTIFICATE REQUEST-----"
@@ -47,6 +48,8 @@ int wolfCLU_certSetup(int argc, char** argv)
     char* outFile = NULL;   /* pointer to the outFile name */
     char* extFile = NULL;   /* pointer to the config File name */
     char* ext     = NULL;   /* pointer to the extensions section's name in config File */
+    int   days    = 0;      /* number of valid days for certificate */
+    int   serialNum = 0;    /* serial number */
     int   inForm  = PEM_FORM; /* the input format */
     int   outForm = PEM_FORM; /* the output format */
 
@@ -65,6 +68,7 @@ int wolfCLU_certSetup(int argc, char** argv)
     WOLFSSL_BIO* inMem = NULL;
     WOLFSSL_BIO* out = NULL;
     WOLFSSL_X509* x509 = NULL;
+    WOLFSSL_X509* ca    = NULL;
     WOLFSSL_EVP_PKEY* privkey = NULL;
     const WOLFSSL_EVP_MD* md = NULL;
 
@@ -103,10 +107,71 @@ int wolfCLU_certSetup(int argc, char** argv)
         textPubkey = 1;
     } /* Optional flag do not return error */
 /*---------------------------------------------------------------------------*/
+/* days */
+/*--------------------------------------------------------------------------*/
+    if (ret == WOLFCLU_SUCCESS) {
+        idx = wolfCLU_checkForArg("-days", 5, argc, argv);
+        if (idx > 0) {
+            /* If no error, set  valid days*/
+            int i;
+            int len = XSTRLEN(argv[idx+1]);
+            for (i=0; i < len; i++) {
+                if(argv[idx+1][i] < '0' || argv[idx+1][i] > '9') {
+                    wolfCLU_LogError("Incorrect number: %s",argv[idx+1]);
+                    ret = WOLFCLU_FATAL_ERROR;
+                    break;
+                }
+            }
+            if (ret == WOLFCLU_SUCCESS) {
+                days =  XATOI(argv[idx+1]);
+            }
+        }
+        if (idx < 0) {
+            ret = WOLFCLU_FATAL_ERROR;
+        }
+    }
+/*---------------------------------------------------------------------------*/
 /* signkey */
 /*--------------------------------------------------------------------------*/
     if (ret == WOLFCLU_SUCCESS) {
         idx = wolfCLU_checkForArg("-signkey", 8, argc, argv);
+        if (idx > 0) {
+            /* If no error, then write keyFile */
+            keyIn = wolfSSL_BIO_new_file(argv[idx+1], "rb");
+            if (keyIn == NULL) {
+                    wolfCLU_LogError("Unable to open private key file %s",
+                            argv[idx+1]);
+                    ret = WOLFCLU_FATAL_ERROR;
+                }
+        }
+        if (idx < 0) {
+            ret = WOLFCLU_FATAL_ERROR;
+        }
+    }
+/*---------------------------------------------------------------------------*/
+/* CA */
+/*--------------------------------------------------------------------------*/
+    if (ret == WOLFCLU_SUCCESS && keyIn == NULL) {
+        idx = wolfCLU_checkForArg("-CA", 3, argc, argv);
+        if (idx > 0) {
+            /* If no error, then load CA certificate */
+            ca = wolfSSL_X509_load_certificate_file(argv[idx+1],
+                        WOLFSSL_FILETYPE_PEM);
+            if (ca == NULL) {
+                    wolfCLU_LogError("Unable to open CA file %s",
+                            argv[idx+1]);
+                    ret = WOLFCLU_FATAL_ERROR;
+                }
+        }
+        if (idx < 0) {
+            ret = WOLFCLU_FATAL_ERROR;
+        }
+    }
+/*---------------------------------------------------------------------------*/
+/* CAkey */
+/*--------------------------------------------------------------------------*/
+    if (ret == WOLFCLU_SUCCESS && keyIn == NULL) {
+        idx = wolfCLU_checkForArg("-CAkey", 6, argc, argv);
         if (idx > 0) {
             /* If no error, then write keyFile */
             keyIn = wolfSSL_BIO_new_file(argv[idx+1], "rb");
@@ -141,6 +206,30 @@ int wolfCLU_certSetup(int argc, char** argv)
         if (idx > 0) {
             /*If no error, then write extFile extension's section */
             ext = argv[idx+1];
+        }
+        if (idx < 0) {
+            ret = WOLFCLU_FATAL_ERROR;
+        }
+    }
+/*---------------------------------------------------------------------------*/
+/* set_serial */
+/*---------------------------------------------------------------------------*/
+    if (ret == WOLFCLU_SUCCESS) {
+        idx = wolfCLU_checkForArg("-set_serial", 11, argc, argv);
+        if (idx > 0) {
+            /*If no error, then set serial number */
+            int i;
+            int len = XSTRLEN(argv[idx+1]);
+            for (i=0; i < len; i++) {
+                if(argv[idx+1][i] < '0' || argv[idx+1][i] > '9') {
+                    wolfCLU_LogError("Incorrect number: %s",argv[idx+1]);
+                    ret = WOLFCLU_FATAL_ERROR;
+                    break;
+                }
+            }
+            if (ret == WOLFCLU_SUCCESS) {
+                serialNum =  XATOI(argv[idx+1]);
+            }
         }
         if (idx < 0) {
             ret = WOLFCLU_FATAL_ERROR;
@@ -246,30 +335,33 @@ int wolfCLU_certSetup(int argc, char** argv)
 /* digest */
 /*---------------------------------------------------------------------------*/
     if (ret == WOLFCLU_SUCCESS) {
+        int i;
         int tmp = 0;
-        idx = wolfCLU_checkForArg("-sha1", 5, argc, argv);
-        if (idx > 0) {
-            md = wolfSSL_EVP_sha1();
-            tmp = idx;
-        }
-        idx = wolfCLU_checkForArg("-sha224", 7, argc, argv);
-        if (idx > 0 && idx > tmp) {
-            md = wolfSSL_EVP_sha224();
-            tmp = idx;
-        }
-        idx = wolfCLU_checkForArg("-sha256", 7, argc, argv);
-        if (idx > 0 && idx > tmp) {
-            md = wolfSSL_EVP_sha256();
-            tmp = idx;
-        }
-        idx = wolfCLU_checkForArg("-sha384", 7, argc, argv);
-        if (idx > 0 && idx > tmp) {
-            md = wolfSSL_EVP_sha384();
-            tmp = idx;
-        }
-        idx = wolfCLU_checkForArg("-sha512", 7, argc, argv);
-        if (idx > 0 && idx > tmp) {
-            md = wolfSSL_EVP_sha512();
+        for (i=0;i<2;i++) {
+            idx = wolfCLU_checkForArg("-sha1", 5, argc, argv);
+            if (idx > 0) {
+                md = wolfSSL_EVP_sha1();
+                tmp = idx;
+            }
+            idx = wolfCLU_checkForArg("-sha224", 7, argc, argv);
+            if (idx > 0 && idx > tmp) {
+                md = wolfSSL_EVP_sha224();
+                tmp = idx;
+            }
+            idx = wolfCLU_checkForArg("-sha256", 7, argc, argv);
+            if (idx > 0 && idx > tmp) {
+                md = wolfSSL_EVP_sha256();
+                tmp = idx;
+            }
+            idx = wolfCLU_checkForArg("-sha384", 7, argc, argv);
+            if (idx > 0 && idx > tmp) {
+                md = wolfSSL_EVP_sha384();
+                tmp = idx;
+            }
+            idx = wolfCLU_checkForArg("-sha512", 7, argc, argv);
+            if (idx > 0 && idx > tmp) {
+                md = wolfSSL_EVP_sha512();
+            }
         }
     }
 /*---------------------------------------------------------------------------*/
@@ -426,11 +518,27 @@ int wolfCLU_certSetup(int argc, char** argv)
             ret = WOLFCLU_FATAL_ERROR;
         }
         else {
-            ret = wolfCLU_setExtensions(x509, conf, ext);
+            /* ret = wolfCLU_setExtensions(x509, conf, ext); */
+            wolfCLU_setExtensions(x509, conf, ext);
         }
         wolfSSL_NCONF_free(conf);
     }
+    /* set cert date */
+    if (ret == WOLFCLU_SUCCESS && days > 0) {
+        ret = wolfCLU_CertSetDate(x509, days);
+    }
 
+    if (ret == WOLFCLU_SUCCESS && serialNum > 0) {
+        WOLFSSL_ASN1_INTEGER* s;
+
+        s = wolfSSL_ASN1_INTEGER_new();
+        wolfSSL_ASN1_INTEGER_set(s, serialNum);
+
+        wolfSSL_X509_set_serialNumber(x509, s);
+        wolfSSL_ASN1_INTEGER_free(s);
+
+
+    }
     /*default to version 3 which supports extensions */
     if (ret == WOLFCLU_SUCCESS &&
            wolfSSL_X509_set_version(x509, WOLFSSL_X509_V3) != WOLFSSL_SUCCESS && reqFlag  ) {
@@ -438,9 +546,33 @@ int wolfCLU_certSetup(int argc, char** argv)
         ret = WOLFCLU_FATAL_ERROR;
     }
 
+    /* set cert issuer */
+    if (ret == WOLFCLU_SUCCESS && ca != NULL) {
+        WOLFSSL_X509_NAME* name;
+
+        name = wolfSSL_X509_get_subject_name(ca);
+        if (name == NULL) {
+            wolfCLU_LogError("Error getting issuer name");
+            ret = WOLFCLU_FATAL_ERROR;
+        }
+        else {
+            if (wolfSSL_X509_set_issuer_name(x509, name) != WOLFSSL_SUCCESS) {
+                wolfCLU_LogError("Error setting issuer name");
+                ret = WOLFCLU_FATAL_ERROR;
+            }
+        }
+    }
+
     if (ret == WOLFCLU_SUCCESS && reqFlag) {
-        if (wolfSSL_X509_check_private_key(x509, privkey) !=
-                WOLFSSL_SUCCESS) {
+        WOLFSSL_X509* t;
+        if (ca != NULL) {
+            t = ca;
+        }
+        else {
+            t = x509;
+        }
+        if (wolfSSL_X509_check_private_key(t, privkey) !=
+            WOLFSSL_SUCCESS) {
             wolfCLU_LogError("Private key does not match with certificate");
             ret = WOLFCLU_FATAL_ERROR;
         }
@@ -451,6 +583,7 @@ int wolfCLU_certSetup(int argc, char** argv)
             }
         }
         wolfSSL_EVP_PKEY_free(privkey);
+        wolfSSL_X509_free(ca);
     }
 
     /* try to open output file if set */
