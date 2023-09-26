@@ -506,23 +506,7 @@ int wolfCLU_certSetup(int argc, char** argv)
         wolfSSL_BIO_free(keyIn);
     }
 
-    if (ret == WOLFCLU_SUCCESS && extFile != NULL) {
-        WOLFSSL_CONF *conf = NULL;
-        long line = 0;
 
-        conf = wolfSSL_NCONF_new(NULL);
-        wolfSSL_NCONF_load(conf, extFile, &line);
-        if (wolfSSL_NCONF_get_section(conf, ext) == NULL) {
-            wolfCLU_LogError("Unable to find certificate extension "
-                    "section %s", ext);
-            ret = WOLFCLU_FATAL_ERROR;
-        }
-        else {
-            /* ret = wolfCLU_setExtensions(x509, conf, ext); */
-            wolfCLU_setExtensions(x509, conf, ext);
-        }
-        wolfSSL_NCONF_free(conf);
-    }
     /* set cert date */
     if (ret == WOLFCLU_SUCCESS && days > 0) {
         ret = wolfCLU_CertSetDate(x509, days);
@@ -561,6 +545,23 @@ int wolfCLU_certSetup(int argc, char** argv)
                 ret = WOLFCLU_FATAL_ERROR;
             }
         }
+    }
+
+    if (ret == WOLFCLU_SUCCESS && extFile != NULL) {
+        WOLFSSL_CONF *conf = NULL;
+        long line = 0;
+
+        conf = wolfSSL_NCONF_new(NULL);
+        wolfSSL_NCONF_load(conf, extFile, &line);
+        if (wolfSSL_NCONF_get_section(conf, ext) == NULL) {
+            wolfCLU_LogError("Unable to find certificate extension "
+                    "section %s", ext);
+            ret = WOLFCLU_FATAL_ERROR;
+        }
+        else {
+            wolfCLU_setExtensions(x509, conf, ext);
+        }
+        wolfSSL_NCONF_free(conf);
     }
 
     if (ret == WOLFCLU_SUCCESS && reqFlag) {

@@ -1,6 +1,6 @@
 /* clu_config.c
  *
- * Copyright (C) 2006-2021 wolfSSL Inc.
+ * Copyright (C) 2006-2023 wolfSSL Inc.
  *
  * This file is part of wolfSSL.
  *
@@ -76,11 +76,14 @@ WOLFSSL_ASN1_OBJECT* wolfCLU_extenstionGetObjectNID(WOLFSSL_X509_EXTENSION *ext,
     return obj;
 }
 
+
 static WOLFSSL_X509_EXTENSION* wolfCLU_parseBasicConstraint(char* in, int crit)
 {
     int   idx = 0; /* offset into string */
+    int i = 0;
     char* word, *end, *str = in;
     char* deli = (char*)":";
+    const char *tok[4] ={};
     WOLFSSL_X509_EXTENSION *ext;
     WOLFSSL_ASN1_OBJECT *obj;
 
@@ -114,9 +117,13 @@ static WOLFSSL_X509_EXTENSION* wolfCLU_parseBasicConstraint(char* in, int crit)
         return NULL;
     }
 
+    for (word = XSTRTOK(str + idx, ",", &end); word != NULL && i <4;
+            word = XSTRTOK(NULL, ",", &end),i++) {
+        tok[i] = word;
 
-    for (word = XSTRTOK(str + idx, deli, &end); word != NULL;
-            word = XSTRTOK(NULL, deli, &end)) {
+    }
+    for (i = 0; tok[i] !=NULL; i++) {
+        word = XSTRTOK((char*)tok[i], deli, &end);
         if (word != NULL && XSTRNCMP(word, "CA", XSTRLEN(word)) == 0) {
             word = XSTRTOK(NULL, deli, &end);
             if (word != NULL) {
@@ -138,6 +145,7 @@ static WOLFSSL_X509_EXTENSION* wolfCLU_parseBasicConstraint(char* in, int crit)
                     wolfSSL_ASN1_INTEGER_free(obj->pathlen);
                 obj->pathlen = wolfSSL_ASN1_INTEGER_new();
                 wolfSSL_ASN1_INTEGER_set(obj->pathlen, XATOI(word));
+                obj->pathlen->length = XATOI(word);
             }
         }
     }
@@ -213,6 +221,8 @@ static WOLFSSL_X509_EXTENSION* wolfCLU_parseSubjectKeyID(char* str, int crit,
 
     return ext;
 }
+
+
 
 
 static WOLFSSL_X509_EXTENSION* wolfCLU_parseKeyUsage(char* str, int crit,
@@ -328,6 +338,109 @@ static int wolfCLU_parseExtension(WOLFSSL_X509* x509, char* str, int nid,
         wolfSSL_X509_EXTENSION_free(ext);
     }
     return WOLFCLU_SUCCESS;
+}
+
+
+/* return WOLFCLU_SUCCESS on success */
+static int wolfCLU_setSubjAltName(WOLFSSL_X509* x509, char* str)
+{
+    int type = 0;
+    int sSz  = 0;
+    int ret  = WOLFCLU_SUCCESS;
+    WOLFSSL_ASN1_STRING *ipStr = NULL;
+    char* word, *end;
+    char* deli = (char*)",";
+    if (x509 == NULL || str == NULL)
+        return ret;
+
+    for (word = XSTRTOK(str, deli, &end); word != NULL;
+            word = XSTRTOK(NULL, deli, &end)) {
+            if (XSTRNCMP(word, "IP", 2) == 0) {
+                ipStr = wolfSSL_a2i_IPADDRESS(word);
+
+                if (ipStr != NULL) {
+                    word   = (char*)wolfSSL_ASN1_STRING_data(ipStr);
+                    sSz = wolfSSL_ASN1_STRING_length(ipStr);
+                    type = ASN_IP_TYPE;
+                }
+                else {
+                    wolfCLU_LogError("bad IP found %s", str);
+                    ret = WOLFCLU_FATAL_ERROR;
+                    break;
+                }
+            }
+            else if (XSTRNCMP(word, "DNS", 3) == 0) {
+                type  = ASN_DNS_TYPE;
+                word  = word + XSTRLEN("DNS")+1;
+                sSz   = (int)XSTRLEN(word);
+            }
+
+            else if (XSTRNCMP(str, "URI", 3) == 0) {
+                type  = ASN_URI_TYPE;
+                word  = word + XSTRLEN("URI")+1;
+                sSz   = (int)XSTRLEN(word);
+            }
+
+            else if (XSTRNCMP(c->name, "RID", 3) == 0) {
+                if ((ridObj = wolfSSL_OBJ_txt2obj(c->value, 0)) == NULL) {
+            #if defined(HAVE_OID_ENCODING) && !defined(NO_WC_ENCODE_OBJECT_ID)
+                    /* If RID value is not named OID, manually encode
+                     * dotted OID into byte array */
+                    token = XSTRTOK(c->value, ".", &ptr);
+
+                    while (token != NULL) {
+                        decoded[decodedCount] = XATOI(token);
+                        decodedCount++;
+                        token = XSTRTOK(NULL, ".", &ptr);
+                    }
+
+                    if (wc_EncodeObjectId(decoded, decodedCount, oid, &oidSz)
+                            == 0) {
+                        s   = (char*)oid;
+                        sSz = (int)oidSz;
+                    }
+                    else {
+                        wolfCLU_LogError("bad RID found %s", c->value);
+                        ret = WOLFCLU_FATAL_ERROR;
+                        break;
+                    }
+            #else
+                    (void)token;
+                    (void)ptr;
+                    (void)decoded;
+                    (void)decodedCount;
+                    (void)oid;
+                    (void)oidSz;
+
+                    wolfCLU_LogError("Couldn't encode RID. OID encoding is not"
+                            " compiled in");
+                    ret = WOLFCLU_FATAL_ERROR;
+                    break;
+
+            #endif
+                }
+                else {
+                    s   = (char*)wolfSSL_OBJ_get0_data(ridObj);
+                    sSz = (int)wolfSSL_OBJ_length(ridObj);
+                }
+
+
+                type = ASN_RID_TYPE;
+            }
+
+            if (wolfSSL_X509_add_altname_ex(x509, word, sSz, type)
+                != WOLFSSL_SUCCESS) {
+                wolfCLU_LogError("error adding subject alt name %s", word);
+                if (ipStr != NULL)
+                    wolfSSL_ASN1_STRING_free(ipStr);
+                ret = WOLFCLU_FATAL_ERROR;
+                break;
+            }
+            if (ipStr != NULL)
+                wolfSSL_ASN1_STRING_free(ipStr);
+
+    }
+    return ret;
 }
 
 
@@ -513,9 +626,14 @@ int wolfCLU_setExtensions(WOLFSSL_X509* x509, WOLFSSL_CONF* conf, char* sect)
     }
 
     current = wolfSSL_NCONF_get_string(conf, sect, "subjectAltName");
-    if (current != NULL && current[0] == '@') {
-        current = current+1;
-        ret = wolfCLU_setAltNames(x509, conf, current);
+    if (current != NULL) {
+        if (current[0] == '@') {
+            current = current+1;
+            ret = wolfCLU_setAltNames(x509, conf, current);
+        }
+        else {
+            ret = wolfCLU_setSubjAltName(x509, current);
+        }
     }
     return ret;
 }
