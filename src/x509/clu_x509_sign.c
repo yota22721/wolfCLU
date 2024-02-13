@@ -1,6 +1,6 @@
 /* clu_x509_sign.c
  *
- * Copyright (C) 2006-2021 wolfSSL Inc.
+ * Copyright (C) 2006-2024 wolfSSL Inc.
  *
  * This file is part of wolfSSL.
  *
@@ -249,7 +249,7 @@ enum wc_HashType wolfCLU_StringToHashType(char* in)
 }
 
 
-static int _wolfCLU_CertSetDate(WOLFSSL_X509* x509, int days)
+int wolfCLU_CertSetDate(WOLFSSL_X509* x509, int days)
 {
     int ret = WOLFCLU_SUCCESS;
 
@@ -476,7 +476,7 @@ int wolfCLU_CertSign(WOLFCLU_CERT_SIGN* csign, WOLFSSL_X509* x509)
 
     /* set cert date */
     if (ret == WOLFCLU_SUCCESS) {
-        ret = _wolfCLU_CertSetDate(x509, csign->days);
+        ret = wolfCLU_CertSetDate(x509, csign->days);
     }
 
     /* set cert issuer */

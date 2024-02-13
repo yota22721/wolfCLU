@@ -1,6 +1,6 @@
 /* clu_funcs.c
  *
- * Copyright (C) 2006-2023 wolfSSL Inc.
+ * Copyright (C) 2006-2024 wolfSSL Inc.
  *
  * This file is part of wolfSSL.
  *
@@ -410,10 +410,14 @@ void wolfCLU_certHelp(void)
     WOLFCLU_LOG(WOLFCLU_L0, "-outform pem or der out format");
     WOLFCLU_LOG(WOLFCLU_L0, "-out output file to write to");
     WOLFCLU_LOG(WOLFCLU_L0, "-req input file is a CSR file");
-    WOLFCLU_LOG(WOLFCLU_L0, "-singkey a key for signing");
+    WOLFCLU_LOG(WOLFCLU_L0, "-singkey a key for self signing");
     WOLFCLU_LOG(WOLFCLU_L0, "-* supported digests for signing");
     WOLFCLU_LOG(WOLFCLU_L0, "-extfile config file");
     WOLFCLU_LOG(WOLFCLU_L0, "-extensions section of the config file to use");
+    WOLFCLU_LOG(WOLFCLU_L0, "-days number of days should be valid for");
+    WOLFCLU_LOG(WOLFCLU_L0, "-CA CA certificate file");
+    WOLFCLU_LOG(WOLFCLU_L0, "-CAkey CA sign key");
+    WOLFCLU_LOG(WOLFCLU_L0, "-set_serial serial number to use");
     WOLFCLU_LOG(WOLFCLU_L0, "-noout no output");
     WOLFCLU_LOG(WOLFCLU_L0, "-subject print out the subject name");
     WOLFCLU_LOG(WOLFCLU_L0, "-issuer  print out the issuer name");

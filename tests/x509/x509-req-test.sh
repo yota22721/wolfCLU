@@ -140,6 +140,32 @@ fi
 
 run_success "req -new -key ./certs/server-key.pem -config ./test.conf -out tmp.csr" "US"
 
+# testing out selfsign
+run_success "x509 -req -in tmp.csr -days 3650 -signkey ./certs/server-key.pem -out tmp.pem"
+SUBJ=`./wolfssl x509 -in tmp.pem -subject -noout`
+ISSU=`./wolfssl x509 -in tmp.pem -issuer -noout`
+if [ "$SUBJ" != "$ISSU" ]; then
+    echo "subject and issuer missmatch on self signed cert"
+    exit 99
+fi
+rm -f tmp.pem
+
+# testing out CA sign
+run_success "x509 -req -in tmp.csr -days 3650 -CA ./certs/ca-cert.pem -CAkey ./certs/ca-key.pem -set_serial 01 -out tmp.pem"
+SUBJ=`./wolfssl x509 -in tmp.pem -subject -noout`
+ISSU=`./wolfssl x509 -in tmp.pem -issuer -noout`
+if [ "$SUBJ" == "$ISSU" ]; then
+    echo "subject and issuer shouldn't match on CA cert"
+    exit 99
+fi
+
+#test setting serial number
+run_success "x509 -in tmp.pem -noout -serial"
+if [ "$RESULT" != "serial=01" ]; then
+    echo "Unexpected serial number!"
+    exit 99
+fi
+rm -f tmp.pem
 
 # fail when extensions can not be found
 run_fail "req -new -extensions v3_alt_ca_not_found -key ./certs/server-key.pem -config ./test.conf -x509 -out alt.crt"

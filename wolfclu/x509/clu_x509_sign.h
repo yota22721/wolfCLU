@@ -1,6 +1,6 @@
 /* clu_x509_sign.h
  *
- * Copyright (C) 2006-2021 wolfSSL Inc.
+ * Copyright (C) 2006-2024 wolfSSL Inc.
  *
  * This file is part of wolfSSL.
  *
@@ -34,6 +34,7 @@ void wolfCLU_CertSignSetHash(WOLFCLU_CERT_SIGN* csign,
         enum wc_HashType hashType);
 void wolfCLU_CertSignSetDate(WOLFCLU_CERT_SIGN* csign, int d);
 int wolfCLU_CertSign(WOLFCLU_CERT_SIGN* csign, WOLFSSL_X509* x509);
+int wolfCLU_CertSetDate(WOLFSSL_X509* x509, int d);
 WOLFCLU_CERT_SIGN* wolfCLU_readSignConfig(char* config, char* sect);
 int wolfCLU_CertSignAppendOut(WOLFCLU_CERT_SIGN* csign, char* out);
 int wolfCLU_CertSignSetOut(WOLFCLU_CERT_SIGN* csign, char* out);
